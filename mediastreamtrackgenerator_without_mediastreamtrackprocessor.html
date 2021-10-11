@@ -47,7 +47,7 @@
           // durations between reads of MediaStreamTrackProcessor are not identical
           await new Promise((resolve) =>
             setTimeout(resolve, duration / 10 ** 3)
-          ).then((_) => {});
+          );
         }
         console.log(base_time, audio.currentTime, audioWriter.desiredSize);
         // if we do not do this we will not reach 1:00 at <audio> timeline
