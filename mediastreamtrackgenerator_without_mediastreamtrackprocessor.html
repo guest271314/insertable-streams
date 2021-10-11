@@ -52,7 +52,7 @@
         console.log(base_time, audio.currentTime, audioWriter.desiredSize);
         // if we do not do this we will not reach 1:00 at <audio> timeline
         while (audio.currentTime < base_time) {
-          await scheduler.postTask((_) => {});
+          await scheduler.postTask(() => {});
         }
         console.log(base_time, audio.currentTime, audioWriter.desiredSize);
         // if we do not close() here MediaStreamTrackGenerator will continue
