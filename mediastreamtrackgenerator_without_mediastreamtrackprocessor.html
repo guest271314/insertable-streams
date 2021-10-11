@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+  <head></head>
+  <body>
+    <script>
+      const readStream = async () => {
+        const audio = new Audio();
+        audio.controls = audio.autoplay = true;
+        document.body.appendChild(audio);
+        // not fired when no data is written to the source until after close()
+        ['suspend', 'emptied', 'stalled', 'waiting'].forEach((event) => {
+          audio.addEventListener(event, (e) => console.log(e.type));
+        });
+        //'https://cdn.glitch.me/98dde6ab-8653-453a-87ac-0cef8b193175%2Ffloat32array_22050_1_channel?v=1633909234439'
+        const decoded = await (
+          await fetch('float32array_22050_1_channel', {
+            cache: 'no-store',
+          })
+        ).arrayBuffer();
+        const floats = new Float32Array(decoded);
+
+        let base_time = 0;
+        const generator = new MediaStreamTrackGenerator({
+          kind: 'audio',
+        });
+        const { writable } = generator;
+        const audioWriter = writable.getWriter();
+        const frameLength = 220;
+        audio.srcObject = new MediaStream([generator]);
+        let i = 0;
+        for (; i < floats.length; i += frameLength) {
+          let data = floats.subarray(i, i + frameLength);
+          const frame = new AudioData({
+            format: 'f32-planar',
+            sampleRate: 22050,
+            numberOfChannels: 1,
+            numberOfFrames: data.length,
+            timestamp: base_time * 10 ** 6,
+            data,
+          });
+          if (frame.numberOfFrames < 220)
+            console.log(frame.numberOfFrames, frame.duration);
+          const { duration } = frame;
+          base_time += frame.duration / 10 ** 6;
+          await audioWriter.ready;
+          await audioWriter.write(frame);
+          // durations between reads of MediaStreamTrackProcessor are not identical
+          await new Promise((resolve) =>
+            setTimeout(resolve, duration / 10 ** 3)
+          ).then((_) => {});
+        }
+        console.log(base_time, audio.currentTime, audioWriter.desiredSize);
+        // if we do not do this we will not reach 1:00 at <audio> timeline
+        while (audio.currentTime < base_time) {
+          await scheduler.postTask((_) => {});
+        }
+        console.log(base_time, audio.currentTime, audioWriter.desiredSize);
+        // if we do not close() here MediaStreamTrackGenerator will continue
+        // streaming at HTMLMediaElement without input to the source track
+        await audioWriter.close();
+        return audioWriter.closed;
+      };
+      readStream()
+        .then(() => console.log('done'))
+        .catch(console.error);
+    </script>
+  </body>
+</html>
+

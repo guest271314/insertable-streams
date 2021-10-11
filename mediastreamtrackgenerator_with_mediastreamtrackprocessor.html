@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+  <head></head>
+  <body>
+    <script>
+      const readStream = async () => {
+        const audio = new Audio();
+        audio.controls = audio.autoplay = true;
+        document.body.appendChild(audio);
+        // not fired when no data is written to the source until after close()
+        ['suspend', 'emptied', 'stalled', 'waiting'].forEach((event) => {
+          audio.addEventListener(event, (e) => console.log(e.type));
+        });
+        //'https://cdn.glitch.me/98dde6ab-8653-453a-87ac-0cef8b193175%2Ffloat32array_22050_1_channel?v=1633909234439'
+        const decoded = await (
+          await fetch('float32array_22050_1_channel', {
+            cache: 'no-store',
+          })
+        ).arrayBuffer();
+        const floats = new Float32Array(decoded);
+
+        let base_time = 0;
+
+        const ac = new AudioContext({
+          latencyHint: 0,
+          sampleRate: 22050,
+        });
+        const msd = new MediaStreamAudioDestinationNode(ac, {
+          channelCount: 1,
+          channelCountMode: 'explicit',
+          channelInterpretation: 'discrete',
+        });
+        const { stream } = msd;
+        const [track] = stream.getAudioTracks();
+        const osc = new OscillatorNode(ac, {
+          frequency: 0,
+          channelCount: 1,
+          channelCountMode: 'explicit',
+          channelInterpretation: 'discrete',
+        });
+        const processor = new MediaStreamTrackProcessor({
+          track,
+        });
+        const generator = new MediaStreamTrackGenerator({
+          kind: 'audio',
+        });
+        const { readable } = processor;
+        const { writable } = generator;
+        const audioWriter = writable.getWriter();
+        const frameLength = 220;
+        osc.connect(msd);
+        osc.start();
+        let i = 0;
+        audio.srcObject = new MediaStream([generator]);
+        let now = performance.now();
+        // use silent stream from OscillatorNode to get timestamp
+        // from MediaStreamTrackProcessor readable read timing to
+        // supply data to MediaStreamTrackGenerator
+        await readable.pipeTo(
+          new WritableStream({
+            async write(audioData) {
+              // durations between reads of MediaStreamTrackProcessor are dynamic
+              // console.log((performance.now() - now) / 1000);
+              // now = performance.now();
+              const { timestamp, format, numberOfChannels } = audioData;
+              if (i < floats.length) {
+                let data = floats.subarray(i, i + frameLength);
+                i += frameLength;
+                const frame = new AudioData({
+                  format,
+                  sampleRate: 22050,
+                  numberOfChannels,
+                  numberOfFrames: data.length,
+                  timestamp,
+                  data,
+                });
+                base_time += frame.duration / 10 ** 6;
+                await audioWriter.ready;
+                await audioWriter.write(frame);
+              } else {
+                osc.stop();
+                track.stop();
+              }
+            },
+            async close() {
+              await audioWriter.close();
+              await ac.close();
+            },
+          })
+        );
+        console.log(base_time, audio.currentTime, audioWriter.desiredSize);
+      };
+      readStream()
+        .then(() => console.log('done'))
+        .catch(console.error);
+    </script>
+  </body>
+</html>
